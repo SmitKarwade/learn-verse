@@ -1,16 +1,29 @@
-FROM gradle:8.5-jdk21 AS build
+# Use Eclipse Temurin JDK 21 as base (lightweight)
+FROM eclipse-temurin:21-jdk-jammy AS build
 
 WORKDIR /app
 
-# Copy only gradle wrapper files first
+# Copy Gradle wrapper and permissions
 COPY gradlew .
 COPY gradle gradle
-
-# Give execution permission to gradlew
 RUN chmod +x gradlew
 
-# Copy the rest of the project
+# Copy everything and build the JAR
 COPY . .
+RUN ./gradlew clean bootJar -x test
 
-# Build without tests
-RUN ./gradlew clean build -x test
+# -------------------- #
+# Run stage
+# -------------------- #
+FROM eclipse-temurin:21-jre-jammy
+
+WORKDIR /app
+
+# Copy built JAR from build stage
+COPY --from=build /app/build/libs/*.jar app.jar
+
+# Expose Spring Boot default port
+EXPOSE 8080
+
+# Run the app
+ENTRYPOINT ["java", "-jar", "app.jar"]
