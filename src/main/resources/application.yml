@@ -4,9 +4,9 @@ server:
 spring:
   data:
     mongodb:
-      uri: ${MONGODB_URI}
+      uri: "mongodb+srv://smitkarwade31:karwade31@cluster0.cqvic.mongodb.net/learn_db?retryWrites=true&w=majority"
 
 jwt:
-  secret: ${JWT_SECRET}
+  secret: "thisIsAVeryLongSecretKeyForJWTSigningThatMustBeAtLeast256BitsLongToWorkWithHS256Algorithm"
   access-token-exp-min: 60
   issuer: learnverse-api
