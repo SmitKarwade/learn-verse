@@ -15,5 +15,12 @@ public class GeneralController {
             public final Object authorities = auth.getAuthorities();
         };
     }
+
+    @GetMapping("/hello")
+    public Object hello() {
+        return new Object() {
+            public final String message = "Hi developers!";
+        };
+    }
 }
 

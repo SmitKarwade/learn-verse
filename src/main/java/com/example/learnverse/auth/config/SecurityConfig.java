@@ -34,7 +34,7 @@ public class SecurityConfig {
 
         // Authorization rules - FIXED WILDCARDS
         http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**", "/actuator/health").permitAll()
+                .requestMatchers("/auth/**", "/actuator/health", "/api/hello").permitAll()
                 .requestMatchers("/api/tutor/**").hasRole("TUTOR")
                 .requestMatchers("/api/**").hasAnyRole("USER", "TUTOR")
                 .anyRequest().authenticated()
