@@ -30,27 +30,39 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
+        System.out.println("🔍 Filter: Processing request to " + request.getRequestURI());
+
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        System.out.println("🔍 Filter: Auth Header = " + (header != null ? "Bearer ***" : "null"));
+
         if (!StringUtils.hasText(header) || !header.startsWith("Bearer ")) {
+            System.out.println("❌ Filter: No Bearer token");
             filterChain.doFilter(request, response);
             return;
         }
 
         String token = header.substring(7);
+        System.out.println("Token: " + token);
         try {
+            System.out.println("Done0");
             Jws<Claims> jws = jwtUtil.validateAndParse(token);
-            Claims claims = jws.getBody();
+            System.out.println("Done1");
+            Claims claims = jws.getPayload();
+            System.out.println("Done2");
             String userId = claims.getSubject();
+            System.out.println("Done3");
             String role = claims.get("role", String.class);
+            System.out.println("✅ Filter: JWT Valid - UserId: " + userId + ", Role: " + role);
 
             var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
             Authentication authentication = new UsernamePasswordAuthenticationToken(
                     userId, token, authorities);
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            System.out.println("🔒 Filter: Authentication set with role: ROLE_" + role);
 
         } catch (Exception e) {
-            // Invalid token - continue without authentication
+            System.out.println("❌ Filter: JWT validation failed: " + e.getMessage());
         }
 
         filterChain.doFilter(request, response);
