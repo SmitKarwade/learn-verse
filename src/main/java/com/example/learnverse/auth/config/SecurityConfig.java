@@ -34,9 +34,11 @@ public class SecurityConfig {
 
         // Authorization rules - FIXED WILDCARDS
         http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**", "/actuator/health", "/api/hello").permitAll()
-                .requestMatchers("/api/tutor/**").hasRole("TUTOR")
-                .requestMatchers("/api/**").hasAnyRole("USER", "TUTOR")
+                .requestMatchers("/auth/**", "/actuator/health", "/api/hello").permitAll()         // Public endpoints
+                .requestMatchers("/api/tutor/**").hasRole("TUTOR")                                 // Tutor-only endpoints
+                .requestMatchers("/api/user/**").hasRole("USER")                                   // User-only endpoints (including interests)
+                .requestMatchers("/api/activities/create").hasRole("TUTOR")                        // Only tutors create activity
+                .requestMatchers("/api/**").hasAnyRole("USER", "TUTOR")                            // Both can access other /api endpoints
                 .anyRequest().authenticated()
         );
 

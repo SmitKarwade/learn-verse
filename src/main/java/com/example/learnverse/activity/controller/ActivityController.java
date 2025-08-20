@@ -40,26 +40,39 @@ public class ActivityController {
         }
     }
 
-    @GetMapping("/fetch")
-    public ResponseEntity<?> getAllActivities(Authentication auth) {
-        System.out.println("🔍 Controller: Fetch activities method reached!");
+    @GetMapping("/my-feed")
+    public ResponseEntity<?> getPersonalizedActivities(Authentication auth) {
         String userId = auth.getName();
-        System.out.println("👤 Controller: userId = " + userId);
 
         boolean isUser = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch(role -> role.equals("ROLE_USER"));
-        boolean isTutor = auth.getAuthorities().stream()
+
+        if (!isUser) {
+            return ResponseEntity.status(403).body("Only users can fetch personalized activities.");
+        }
+
+        try {
+            List<Activity> activities = activityService.getActivitiesForUser(userId);
+            return ResponseEntity.ok(activities);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/all")
+    public ResponseEntity<?> getAllActivities(Authentication auth) {
+        String userId = auth.getName();
+
+        boolean isUser = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(role -> role.equals("ROLE_TUTOR"));
+                .anyMatch(role -> role.equals("ROLE_USER"));
 
         if (isUser) {
             List<Activity> activities = activityService.getAllActivitiesForUsers();
             return ResponseEntity.ok(activities);
-        } else if (isTutor) {
-            return ResponseEntity.status(403).body("Only users (students) can fetch activities.");
         } else {
-            return ResponseEntity.status(401).body("Authentication required.");
+            return ResponseEntity.status(403).body("Only users can fetch activities.");
         }
     }
 }
