@@ -1,33 +1,22 @@
-# Use Eclipse Temurin JDK 21 as base (lightweight)
+# Build stage
 FROM eclipse-temurin:21-jdk-jammy AS build
-
 WORKDIR /app
 
-# Copy Gradle wrapper and set executable permissions
 COPY gradlew .
 RUN chmod +x gradlew
-
-# Copy Gradle files
 COPY gradle gradle
-
-# Copy the rest of the project
 COPY . .
 
-# Build the JAR
 RUN ./gradlew clean bootJar -x test
+RUN mv build/libs/*.jar app.jar
 
-# -------------------- #
 # Run stage
-# -------------------- #
-FROM eclipse-temurin:21-jre-jammy
-
+FROM eclipse-temurin:21-jdk-jammy
 WORKDIR /app
 
-# Copy built JAR from build stage
-COPY --from=build /app/build/libs/*.jar app.jar
+COPY --from=build /app/app.jar app.jar
 
-# Expose Spring Boot default port
+# Railway sets PORT dynamically, but expose 8080 for local dev
 EXPOSE 8080
 
-# Run
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
