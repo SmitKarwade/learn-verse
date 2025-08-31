@@ -22,5 +22,10 @@ public class GeneralController {
             public final String message = "Hi developers!";
         };
     }
+
+    @GetMapping("/debug/token")
+    public Object debugToken(Authentication auth) {
+        return auth;
+    }
 }
 
