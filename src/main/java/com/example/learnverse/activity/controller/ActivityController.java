@@ -1,6 +1,7 @@
 package com.example.learnverse.activity.controller;
 
 import com.example.learnverse.activity.model.Activity;
+import com.example.learnverse.activity.model.PagedResponse;
 import com.example.learnverse.activity.service.ActivityService;
 import com.example.learnverse.activity.filter.ActivityFilterDto;
 import lombok.RequiredArgsConstructor;
@@ -137,7 +138,18 @@ public class ActivityController {
                     .build();
 
             Page<Activity> activities = activityService.getFilteredActivities(filterDto);
-            return ResponseEntity.ok(activities);
+
+            PagedResponse<Activity> response = new PagedResponse<>(
+                    activities.getContent(),
+                    activities.getNumber(),
+                    activities.getSize(),
+                    activities.getTotalElements(),
+                    activities.getTotalPages(),
+                    activities.isLast()
+            );
+
+            return ResponseEntity.ok(response);
+
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Error filtering activities: " + e.getMessage());
         }
