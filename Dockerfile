@@ -19,4 +19,5 @@ COPY --from=build /app/app.jar app.jar
 # Railway sets PORT dynamically, but expose 8080 for local dev
 EXPOSE 8080
 
+#Run
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
