@@ -1,6 +1,8 @@
 package com.example.learnverse.activity.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
@@ -9,36 +11,20 @@ import java.util.stream.Collectors;
 
 @Service
 @Slf4j
+@EnableCaching
 public class TfIdfService {
+
+//    - Text preprocessing (lowercase, remove punctuation, normalize)
+//    - TF-IDF vectorization (converts text to numerical vectors)
+//    - Cosine similarity calculation (measures text relevance)
+//    - Vocabulary management (tracks all unique words)
+
 
     private Map<String, Integer> termToIndex = new HashMap<>();
     private Map<String, Integer> documentFrequencies = new HashMap<>();
     private int totalDocuments = 0;
 
-    public void buildIndex(List<String> documents) {
-        log.info("Building TF-IDF index for {} documents", documents.size());
-
-        termToIndex.clear();
-        documentFrequencies.clear();
-        totalDocuments = documents.size();
-
-        int termIndex = 0;
-
-        for (String doc : documents) {
-            List<String> tokens = preprocess(doc);
-            Set<String> uniqueTokens = new HashSet<>(tokens);
-
-            for (String token : uniqueTokens) {
-                documentFrequencies.put(token, documentFrequencies.getOrDefault(token, 0) + 1);
-                if (!termToIndex.containsKey(token)) {
-                    termToIndex.put(token, termIndex++);
-                }
-            }
-        }
-
-        log.info("TF-IDF index built with {} unique terms", termToIndex.size());
-    }
-
+    @Cacheable(value = "activityVectors", key = "#p0", condition = "#p0 != null")
     public double[] vectorizeText(String text) {
         List<String> tokens = preprocess(text);
         Map<String, Integer> termCounts = new HashMap<>();
@@ -66,6 +52,31 @@ public class TfIdfService {
         }
 
         return vector;
+    }
+
+    @Cacheable(value = "tfidfIndex", key = "#p0.hashCode()", condition = "#p0 != null && !#p0.isEmpty()")
+    public void buildIndex(List<String> documents) {
+        log.info("Building TF-IDF index for {} documents", documents.size());
+
+        termToIndex.clear();
+        documentFrequencies.clear();
+        totalDocuments = documents.size();
+
+        int termIndex = 0;
+
+        for (String doc : documents) {
+            List<String> tokens = preprocess(doc);
+            Set<String> uniqueTokens = new HashSet<>(tokens);
+
+            for (String token : uniqueTokens) {
+                documentFrequencies.put(token, documentFrequencies.getOrDefault(token, 0) + 1);
+                if (!termToIndex.containsKey(token)) {
+                    termToIndex.put(token, termIndex++);
+                }
+            }
+        }
+
+        log.info("TF-IDF index built with {} unique terms", termToIndex.size());
     }
 
     public static double cosineSimilarity(double[] vec1, double[] vec2) {

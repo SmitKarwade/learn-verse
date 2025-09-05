@@ -11,6 +11,12 @@ import java.util.regex.Pattern;
 @Slf4j
 public class QueryParser {
 
+//    - Natural language parsing using regex patterns
+//    - Extracts structured data: distance, price, mode, time preferences
+//    - Cleans query text for TF-IDF processing
+//    - Handles various input formats gracefully
+
+
     // Regex patterns for extracting structured data
     private static final Pattern DISTANCE_PATTERN = Pattern.compile("(?:within|under|less than|max)\\s+(\\d+)\\s*(?:km|kilometer|kilometres)", Pattern.CASE_INSENSITIVE);
     private static final Pattern PRICE_PATTERN = Pattern.compile("(?:under|below|less than|max|budget|within)\\s+(\\d+)\\s*(?:inr|rupees?|rs)", Pattern.CASE_INSENSITIVE);
