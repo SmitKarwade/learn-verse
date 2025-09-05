@@ -39,6 +39,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/user/**").hasRole("USER")                                   // User-only endpoints (including interests)
                 .requestMatchers("/api/activities/create").hasRole("TUTOR")                         // Only tutors create activity
                 .requestMatchers("/api/activities/filter").hasRole("USER")
+                .requestMatchers("/api/activities/filter/**").hasRole("USER")
                 .requestMatchers("/api/**").hasAnyRole("USER", "TUTOR")                            // Both can access other /api endpoints
                 .anyRequest().authenticated()
         );

@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.NearQuery;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.TextCriteria;
 import org.springframework.data.support.PageableExecutionUtils;
@@ -21,9 +22,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.geo.Distance;
+import org.springframework.data.geo.Metrics;
+import org.springframework.data.geo.Point;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +49,22 @@ public class ActivityService {
     // Existing methods...
     public Activity createActivityByTutor(Activity activity, String tutorId) {
         normalizeActivityData(activity);
+
+        if (activity.getLocation() != null && activity.getLocation().getCoordinates() != null) {
+            Double lon = activity.getLocation().getCoordinates().getCoordinates().get(0);
+            Double lat = activity.getLocation().getCoordinates().getCoordinates().get(1);
+
+            if (lat != null && lon != null) {
+                Activity.Location.Coordinates geoJsonCoords = Activity.Location.Coordinates.builder()
+                        .type("Point")
+                        .coordinates(Arrays.asList(lon, lat))
+                        .build();
+
+                activity.getLocation().setCoordinates(geoJsonCoords);
+            }
+        }
+
+
         activity.setTutorId(tutorId);
         activity.setCreatedAt(new java.util.Date());
         activity.setUpdatedAt(new java.util.Date());
@@ -79,6 +102,42 @@ public class ActivityService {
 
     public List<Activity> getAllActivitiesForUsers() {
         return activityRepository.findByIsActiveAndIsPublic(true, true);
+    }
+
+    public Page<Activity> getActivitiesByProximity(ActivityFilterDto filterDto) {
+        if (filterDto.getUserLatitude() == null || filterDto.getUserLongitude() == null) {
+            throw new IllegalArgumentException("User latitude and longitude are required for proximity search.");
+        }
+
+        Point userLocation = new Point(filterDto.getUserLongitude(), filterDto.getUserLatitude());
+        double maxDistance = (filterDto.getMaxDistanceKm() != null ? filterDto.getMaxDistanceKm() : 50); // default 50 km
+        Distance maxDistanceMeters = new Distance(maxDistance, Metrics.KILOMETERS);
+
+        NearQuery nearQuery = NearQuery.near(userLocation)
+                .maxDistance(maxDistanceMeters)
+                .spherical(true); // No distanceField() here
+
+        Aggregation aggregation = Aggregation.newAggregation(
+                Aggregation.geoNear(nearQuery, "distance"),
+                Aggregation.match(
+                        Criteria.where("isActive").is(true)
+                                .and("isPublic").is(true)
+                ),
+                // Skip and limit for pagination
+                Aggregation.skip((filterDto.getPage() != null ? filterDto.getPage() : 0) * (filterDto.getSize() != null ? filterDto.getSize() : 20)),
+                Aggregation.limit(filterDto.getSize() != null ? filterDto.getSize() : 20)
+        );
+
+        AggregationResults<Activity> results = mongoTemplate.aggregate(aggregation, "activities", Activity.class);
+
+        List<Activity> activities = results.getMappedResults();
+
+        Pageable pageable = PageRequest.of(
+                filterDto.getPage() != null ? filterDto.getPage() : 0,
+                filterDto.getSize() != null ? filterDto.getSize() : 20
+        );
+
+        return PageableExecutionUtils.getPage(activities, pageable, () -> activities.size());
     }
 
     // Updated comprehensive filtering method with case-insensitive search
@@ -346,6 +405,12 @@ public class ActivityService {
                     break;
                 case "duration":
                     sort = Sort.by(direction, "duration.totalDuration");
+                    break;
+                case "city":
+                    sort = Sort.by(direction, "location.city");
+                    break;
+                case "state":
+                    sort = Sort.by(direction, "location.state");
                     break;
                 default:
                     sort = Sort.by(direction, filterDto.getSortBy());

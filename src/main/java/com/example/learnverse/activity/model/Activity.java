@@ -102,8 +102,11 @@ public class Activity {
         @AllArgsConstructor
         @Builder
         public static class Coordinates {
-            private Double latitude;
-            private Double longitude;
+            @NotNull
+            private String type;
+
+            @NotNull
+            private List<Double> coordinates;
         }
     }
 

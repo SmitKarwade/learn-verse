@@ -18,6 +18,9 @@ public class ActivityFilterDto {
     // Location filters
     private List<String> cities;
     private List<String> states;
+    private Double userLatitude;
+    private Double userLongitude;
+    private Double maxDistanceKm;
 
     // Price filters
     private Integer minPrice;

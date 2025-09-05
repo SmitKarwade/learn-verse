@@ -171,6 +171,12 @@ public class ActivityIndexConfig implements CommandLineRunner {
                     new IndexOptions().name("idx_featured_rating_price")
             );
 
+            // 16. Geospatial index for proximity search
+            collection.createIndex(
+                    Indexes.geo2dsphere("location.coordinates"),
+                    new IndexOptions().name("idx_location_coordinates_2dsphere")
+            );
+
             log.info("Successfully created MongoDB indexes for Activity collection");
 
         } catch (Exception e) {

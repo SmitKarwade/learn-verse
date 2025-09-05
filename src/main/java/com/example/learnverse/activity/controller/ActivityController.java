@@ -175,4 +175,56 @@ public class ActivityController {
             return ResponseEntity.badRequest().body("Error filtering activities: " + e.getMessage());
         }
     }
+
+    @GetMapping("/filter/proximity")
+    public ResponseEntity<?> getActivitiesByProximity(
+            @RequestParam Double userLatitude,
+            @RequestParam Double userLongitude,
+            @RequestParam(required = false) Double maxDistanceKm,
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "20") Integer size,
+            Authentication auth) {
+
+        boolean isUser = auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals("ROLE_USER"));
+
+        if (!isUser) {
+            return ResponseEntity.status(403).body("Only users can filter activities.");
+        }
+
+        try {
+            ActivityFilterDto filterDto = ActivityFilterDto.builder()
+                    .userLatitude(userLatitude)
+                    .userLongitude(userLongitude)
+                    .maxDistanceKm(maxDistanceKm)
+                    .page(page)
+                    .size(size)
+                    .build();
+
+            Page<Activity> activities = activityService.getActivitiesByProximity(filterDto);
+
+            long totalElements = 0;
+            int totalPages = 0;
+
+            if (activities != null) {
+                totalElements = activities.getTotalElements() >= 0 ? activities.getTotalElements() : activities.getContent().size();
+                totalPages = activities.getTotalPages() > 0 ? activities.getTotalPages() : 1;
+            }
+
+            PagedResponse<Activity> response = new PagedResponse<>(
+                    activities.getContent(),
+                    activities.getNumber(),
+                    activities.getSize(),
+                    totalElements,
+                    totalPages,
+                    activities.isLast()
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error filtering activities by proximity: " + e.getMessage());
+        }
+    }
 }
