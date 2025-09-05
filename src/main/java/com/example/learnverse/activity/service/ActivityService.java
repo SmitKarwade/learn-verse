@@ -1,6 +1,7 @@
 package com.example.learnverse.activity.service;
 
 import com.example.learnverse.activity.model.Activity;
+import com.example.learnverse.activity.nlp.QueryParser;
 import com.example.learnverse.activity.repository.ActivityRepository;
 import com.example.learnverse.activity.filter.ActivityFilterDto;
 import com.example.learnverse.auth.service.UserService;
@@ -20,7 +21,6 @@ import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -45,6 +45,199 @@ public class ActivityService {
 
     @Autowired
     private MongoTemplate mongoTemplate;
+
+    @Autowired
+    private TfIdfService tfIdfService;
+
+    @Autowired
+    private QueryParser queryParser;
+
+    public Page<Activity> getRecommendedActivities(String naturalQuery, String userId,
+                                                   Double userLatitude, Double userLongitude,
+                                                   Integer page, Integer size) {
+        log.info("Getting recommendations for natural query: {}", naturalQuery);
+
+        // Parse the natural language query
+        QueryParser.ParsedQuery parsedQuery = queryParser.parseQuery(naturalQuery);
+
+        // Build base query with hard filters
+        Query query = new Query();
+        List<Criteria> criteriaList = new ArrayList<>();
+
+        // Base criteria
+        criteriaList.add(Criteria.where("isActive").is(true));
+        criteriaList.add(Criteria.where("isPublic").is(true));
+
+        // Apply parsed filters
+        if (parsedQuery.getPriceMax() != null) {
+            criteriaList.add(Criteria.where("pricing.price").lte(parsedQuery.getPriceMax()));
+        }
+
+        if (parsedQuery.getMode() != null) {
+            criteriaList.add(Criteria.where("mode").regex("^" + Pattern.quote(parsedQuery.getMode()) + "$", "i"));
+        }
+
+        if (parsedQuery.getTimePreference() != null && parsedQuery.getTimePreference().equals("weekend")) {
+            criteriaList.add(new Criteria().orOperator(
+                    Criteria.where("schedule.sessionDays").regex("saturday", "i"),
+                    Criteria.where("schedule.sessionDays").regex("sunday", "i")
+            ));
+        }
+
+        if (!criteriaList.isEmpty()) {
+            query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
+        }
+
+        // Get candidate activities
+        List<Activity> candidates = mongoTemplate.find(query, Activity.class);
+        log.info("Found {} candidate activities after hard filtering", candidates.size());
+
+        if (candidates.isEmpty()) {
+            return PageableExecutionUtils.getPage(new ArrayList<>(),
+                    PageRequest.of(page != null ? page : 0, size != null ? size : 20), () -> 0);
+        }
+
+        // Build TF-IDF index and rank by similarity
+        List<Activity> rankedActivities = rankActivitiesBySimilarity(candidates, parsedQuery.getQueryText());
+
+        // Apply proximity filtering if distance is specified
+        final List<Activity> finalRankedActivities;
+        if (parsedQuery.getDistanceKm() != null && userLatitude != null && userLongitude != null) {
+            finalRankedActivities = filterByProximity(rankedActivities, userLatitude, userLongitude, parsedQuery.getDistanceKm());
+        } else {
+            finalRankedActivities = rankedActivities; // Skip proximity filtering if no location
+        }
+
+        // Store the total count in a final variable
+        final long totalCount = finalRankedActivities.size();
+
+        // Apply pagination
+        int pageNum = page != null ? page : 0;
+        int pageSize = size != null ? size : 20;
+        int start = pageNum * pageSize;
+        int end = Math.min(start + pageSize, finalRankedActivities.size());
+
+        List<Activity> paginatedResults = start < finalRankedActivities.size() ?
+                finalRankedActivities.subList(start, end) : new ArrayList<>();
+
+        Pageable pageable = PageRequest.of(pageNum, pageSize);
+
+        return PageableExecutionUtils.getPage(paginatedResults, pageable, () -> totalCount);
+    }
+
+    private List<Activity> rankActivitiesBySimilarity(List<Activity> activities, String queryText) {
+        if (queryText == null || queryText.trim().isEmpty() || activities.isEmpty()) {
+            return activities;
+        }
+
+        // Build activity texts for TF-IDF
+        List<String> activityTexts = activities.stream()
+                .map(this::buildActivityText)
+                .collect(Collectors.toList());
+
+        // Build TF-IDF index
+        tfIdfService.buildIndex(activityTexts);
+
+        // Get query vector
+        double[] queryVector = tfIdfService.vectorizeText(queryText);
+
+        // Calculate similarities
+        List<ActivitySimilarity> similarities = new ArrayList<>();
+        for (int i = 0; i < activities.size(); i++) {
+            double[] activityVector = tfIdfService.vectorizeText(activityTexts.get(i));
+            double similarity = TfIdfService.cosineSimilarity(queryVector, activityVector);
+            similarities.add(new ActivitySimilarity(activities.get(i), similarity));
+        }
+
+        // Sort by similarity score (descending)
+        similarities.sort((a, b) -> Double.compare(b.similarity, a.similarity));
+
+        log.info("Ranked activities by similarity - top score: {}",
+                similarities.isEmpty() ? 0 : similarities.get(0).similarity);
+
+        return similarities.stream()
+                .map(as -> as.activity)
+                .collect(Collectors.toList());
+    }
+
+    private String buildActivityText(Activity activity) {
+        StringBuilder text = new StringBuilder();
+
+        // Weight important fields by repetition
+        if (activity.getTitle() != null) {
+            text.append(activity.getTitle()).append(" ");
+            text.append(activity.getTitle()).append(" "); // 2x weight
+        }
+
+        if (activity.getSubject() != null) {
+            text.append(activity.getSubject()).append(" ");
+            text.append(activity.getSubject()).append(" "); // 2x weight
+        }
+
+        if (activity.getDescription() != null) {
+            text.append(activity.getDescription()).append(" ");
+        }
+
+        if (activity.getTags() != null) {
+            for (String tag : activity.getTags()) {
+                text.append(tag).append(" ");
+            }
+        }
+
+        if (activity.getActivityType() != null) {
+            text.append(activity.getActivityType()).append(" ");
+        }
+
+        if (activity.getClassType() != null) {
+            text.append(activity.getClassType()).append(" ");
+        }
+
+        return text.toString().trim();
+    }
+
+    private List<Activity> filterByProximity(List<Activity> activities, double userLat, double userLon, double maxDistanceKm) {
+        return activities.stream()
+                .filter(activity -> {
+                    if (activity.getLocation() == null ||
+                            activity.getLocation().getCoordinates() == null ||
+                            activity.getLocation().getCoordinates().getCoordinates() == null ||
+                            activity.getLocation().getCoordinates().getCoordinates().size() < 2) {
+                        return false;
+                    }
+
+                    double activityLon = activity.getLocation().getCoordinates().getCoordinates().get(0);
+                    double activityLat = activity.getLocation().getCoordinates().getCoordinates().get(1);
+
+                    double distance = calculateDistance(userLat, userLon, activityLat, activityLon);
+                    return distance <= maxDistanceKm;
+                })
+                .collect(Collectors.toList());
+    }
+
+    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371; // Radius of the earth in km
+
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        double distance = R * c; // Distance in km
+
+        return distance;
+    }
+
+    private static class ActivitySimilarity {
+        Activity activity;
+        double similarity;
+
+        ActivitySimilarity(Activity activity, double similarity) {
+            this.activity = activity;
+            this.similarity = similarity;
+        }
+    }
+
 
     // Existing methods...
     public Activity createActivityByTutor(Activity activity, String tutorId) {
